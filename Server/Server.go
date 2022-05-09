@@ -13,16 +13,18 @@ import (
 type API int
 
 type RestaurantQueue struct {
-	Queue           sync.Mutex
+	QueueMutex      sync.Mutex
+	Queue           []string
 	eating, waiting int
 	must_wait       bool
 }
 
 var r = RestaurantQueue{
-	Queue:     sync.Mutex{},
-	eating:    0,
-	waiting:   0,
-	must_wait: false,
+	QueueMutex: sync.Mutex{},
+	Queue:      make([]string, 0),
+	eating:     0,
+	waiting:    0,
+	must_wait:  false,
 }
 
 func min(a, b int) int {
@@ -32,26 +34,28 @@ func min(a, b int) int {
 	return b
 }
 
-func Eating() {
+func Eating(name string) {
 	time.Sleep(5 * time.Second)
-	GoOutTheRestaurant()
+	GoOutTheRestaurant(name)
 }
 
-func GoOutTheRestaurant() {
-	r.Queue.Lock()
-	defer r.Queue.Unlock()
+func GoOutTheRestaurant(name string) {
+	r.QueueMutex.Lock()
+	defer r.QueueMutex.Unlock()
 	r.eating -= 1
-	fmt.Println("dando o fora")
+	fmt.Println(name + " saindo do restaurante")
 	fmt.Printf("agora tem %d comendo \n", r.eating)
 	if r.eating == 0 {
 		fmt.Println("todos sairam do restaurante")
 		n := min(r.waiting, 5)
 		r.waiting -= n
 		r.eating += n
-		fmt.Printf("%d entratam no restaurante\n", r.eating)
 		for i := 0; i < r.eating; i++ {
-			go Eating()
+			fmt.Printf("%s entrou no restaurante\n", r.Queue[0])
+			go Eating(r.Queue[0])
+			r.Queue = r.Queue[1:]
 		}
+		fmt.Printf("%d entratam no restaurante\n", r.eating)
 		r.must_wait = r.eating == 5
 		if r.must_wait {
 			fmt.Println("restaurante cheio")
@@ -59,17 +63,18 @@ func GoOutTheRestaurant() {
 	}
 }
 
-func EnterRestaurant() bool {
-	r.Queue.Lock()
-	defer r.Queue.Unlock()
+func TryToEnterRestaurant(name string) bool {
+	r.QueueMutex.Lock()
+	defer r.QueueMutex.Unlock()
 	if r.must_wait {
 		r.waiting += 1
-		fmt.Println("entrando na fila do restaurante")
+		r.Queue = append(r.Queue, name)
+		fmt.Println(name + " entrando na fila do restaurante")
 		return false
 	} else {
 		r.eating += 1
 		r.must_wait = r.eating == 5
-		fmt.Println("entrando na mesa do restaurante")
+		fmt.Println(name + " entrando na mesa do restaurante")
 		if r.must_wait {
 			fmt.Println("restaurante cheio")
 		}
@@ -77,13 +82,13 @@ func EnterRestaurant() bool {
 	}
 }
 
-func (a *API) Restaurant(nothing string, reply *string) error {
-	isInsideRestaurant := EnterRestaurant()
+func (a *API) Restaurant(name string, reply *string) error {
+	isInsideRestaurant := TryToEnterRestaurant(name)
 	if isInsideRestaurant {
-		*reply = "Client entered the restaurant"
-		go Eating()
+		*reply = name + " entered the restaurant"
+		go Eating(name)
 	} else {
-		*reply = "Client is waiting to get in the restaurant"
+		*reply = name + " is waiting to get in the restaurant"
 	}
 	return nil
 }
